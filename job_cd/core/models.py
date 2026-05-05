@@ -100,7 +100,7 @@ class JobDeployment(BaseModel):
     company: Optional[Company] = None
     status: DeploymentStatus = DeploymentStatus.PENDING
     outreaches: list[Outreach] = Field(default_factory=list)
-    payload: Optional[IntakePayload] = None
+    intake_payload: Optional[IntakePayload] = None
     
     
     

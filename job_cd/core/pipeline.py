@@ -40,7 +40,7 @@ class JobPipelineEngine:
                 profile=profile,
                 company=None,
                 status=DeploymentStatus.PENDING,
-                payload=payload,
+                intake_payload=payload,
             )
 
             for step in self.pipeline_steps:
@@ -61,8 +61,10 @@ class JobPipelineEngine:
 
 class ExtractorStep(PipelineStep):
     """
-    The Pipeline Step that manages the CompanyExtractorStrategy.
-    It protects the pipeline by checking statuses and handling failures safely.
+    Executes the company extraction phase of the pipeline.
+
+    Bypassing the Extractor if the user provided complete manual overrides.
+    If partial overrides are provided, they are merged with the Extractor's output
     """
     def __init__(self, extractor: CompanyExtractorStrategy):
         self.extractor = extractor
@@ -72,44 +74,55 @@ class ExtractorStep(PipelineStep):
             return deployment
 
         logging.info(f"Extracting company details for Job: {deployment.job.id}")
-        
-        # Handle manual overrides
-        if deployment.payload and deployment.payload.manual_title:
-            deployment.job.title = deployment.payload.manual_title
-        
-        if deployment.payload and deployment.payload.manual_company and deployment.payload.manual_domain:
-            # Create company manually with overrides
+
+        # Bypass Extractor entirely if we have all required manual data
+        intake_payload = deployment.intake_payload
+        if intake_payload and intake_payload.manual_company and intake_payload.manual_domain and intake_payload.manual_title:
             company = Company(
                 id=str(uuid.uuid4()),
-                name=deployment.payload.manual_company,
-                domain=deployment.payload.manual_domain,
-                job_title=deployment.job.title
+                name=intake_payload.manual_company,
+                domain=intake_payload.manual_domain,
+                job_title=intake_payload.manual_title
             )
             deployment.company = company
             deployment.status = DeploymentStatus.EXTRACTED
-        else:
-            # Call extractor for missing fields
-            company = self.extractor.extract_company(deployment.job)
-            
-            # Check if company exists and has both domain and job_title
-            if company and company.domain and company.job_title:
-                # If manual title was provided, ensure it's used
-                if deployment.payload and deployment.payload.manual_title:
-                    company.job_title = deployment.job.title
-                deployment.company = company
-                deployment.status = DeploymentStatus.EXTRACTED
-                deployment.job.title = company.job_title
-            else:
-                logging.error(f"🚨 ExtractorStep failed to parse title/domain for Job {deployment.job.id}.")
-                deployment.status = DeploymentStatus.FAILED
-            
+            return deployment
+
+        company = self.extractor.extract_company(deployment.job)
+
+        # Check if the extractor failed to return any company
+        if not company:
+            logging.error(f"🚨 ExtractorStep failed to extract company details for Job {deployment.job.id}.")
+            deployment.status = DeploymentStatus.FAILED
+            return deployment
+
+        # Override using manual overrides if present
+        if intake_payload:
+            company.job_title = intake_payload.manual_title or company.job_title
+            company.name = intake_payload.manual_company or company.name
+            company.domain = intake_payload.manual_domain or company.domain
+
+        # Check if the company object has the minimum data required to move further in the pipeline
+        if not company.job_title or not company.name or not company.domain:
+            logging.error(f"🚨 ExtractorStep failed to extract all required company details for Job {deployment.job.id}.")
+            deployment.status = DeploymentStatus.FAILED
+            return deployment
+
+        deployment.company = company
+        deployment.job.title = company.job_title
+        deployment.status = DeploymentStatus.EXTRACTED
+
         return deployment
     
     def process_message(self, deployment: JobDeployment) -> str:
         if deployment.status == DeploymentStatus.EXTRACTED:
             return f"🎉 Extracted company details for Job: {deployment.job.id}"
         elif deployment.status == DeploymentStatus.FAILED:
-            return f"🚨 Unable to parse job title or domain for this job post. Please try again."
+            return (
+                f"🚨 Extraction failed for Job {deployment.job.job_url}.\n"
+                f"💡 Tip: Try bypassing the Extractor by providing manual overrides:\n"
+                f"   job-cd build \"{deployment.job.job_url}\" --title \"...\" --company \"...\" --domain \"...\""
+            )
         else:
             return f"🛸 Extracting company details for Job: {deployment.job.id}"
 
