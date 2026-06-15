@@ -1,8 +1,10 @@
 import json
 import sqlite3
 import logging
-from typing import Optional, List
+from pathlib import Path
+from typing import Optional, List, Union
 
+from job_cd.core.config import config_manager
 from job_cd.core.interfaces import DatabaseStrategy
 from job_cd.core.models import JobDeployment
 from job_cd.enums import DeploymentStatus
@@ -14,12 +16,15 @@ class SQLiteDatabaseAdapter(DatabaseStrategy):
     Stores the complex Pydantic model as a JSON string for easy retrieval.
     """
 
-    def __init__(self, db_path: str = "job_history.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[Path] = None):
+        self.db_path = db_path or config_manager.db_path
         self._initialize_db()
 
     def _initialize_db(self):
         """Creates the database and table if they don't exist."""
+        # Ensure the directory exists
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
         with sqlite3.connect(self.db_path) as conn:
             conn.execute('''
                          CREATE TABLE IF NOT EXISTS deployments (

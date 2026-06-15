@@ -23,5 +23,11 @@ dependencies = [
     "google-genai",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-mock",
+]
+
 [project.scripts]
 jobcd = "job_cd.main:app"
