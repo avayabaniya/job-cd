@@ -30,7 +30,17 @@ source venv/bin/activate
 pip install -e .
 ```
 
-### 2. Basic Usage
+### 2. Configuration & Setup
+
+Before running the pipeline, you need to initialize your global configuration:
+
+```bash
+jobcd init
+```
+
+This will create an appropriate configuration directory (e.g., `~/.config/jobcd` on Linux/macOS) and initialize your `.env` and `profiles.json` files.
+
+### 3. Basic Usage
 
 Automate your outreach in three simple steps:
 
@@ -60,8 +70,10 @@ jobcd dispatch
 
 ## ⚙️ Configuration
 
+`job-cd` stores its data and configuration in a global directory determined by your operating system (e.g., `~/Library/Application Support/jobcd` on macOS).
+
 ### 1. Environment Variables
-Create a `.env` file in the root directory:
+The `jobcd init` command creates a `.env` file in your global config directory. You can manually edit it to update your keys:
 
 ```env
 GOOGLE_API_KEY=your_gemini_key
@@ -73,7 +85,7 @@ SMTP_PASSWORD=your_app_password
 ```
 
 ### 2. Personalization (Profiles)
-`job-cd` uses your profile to tailor outreach. Create `.cache/profiles.json`:
+`job-cd` uses your profile to tailor outreach. A default profile is created in `.cache/profiles.json` within your global config directory:
 
 ```json
 {
