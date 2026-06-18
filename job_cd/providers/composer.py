@@ -85,7 +85,7 @@ class GeminiCliEmailComposer(EmailComposerStrategy):
 
         try:
             process = subprocess.run(
-                ["gemini", "-m", self.model_name, "-p", prompt, "--output-format", "json"],
+                ["gemini", "-m", self.model_name, "-p", prompt, "--output-format", "json", "--skip-trust"],
                 input=context,
                 capture_output=True,
                 text=True,

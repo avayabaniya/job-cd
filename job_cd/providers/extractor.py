@@ -107,7 +107,7 @@ class GeminiCliExtractor(CompanyExtractorStrategy):
             # Call the CLI using Python's subprocess.
             # -p passes the prompt, --output-format json forces the CLI to return a predictable JSON payload
             process = subprocess.run(
-                ["gemini", "-m", f"{self.model_name}", "-p", prompt, "--output-format", "json"],
+                ["gemini", "-m", f"{self.model_name}", "-p", prompt, "--output-format", "json", "--skip-trust"],
                 input=context,
                 capture_output=True,
                 text=True,
