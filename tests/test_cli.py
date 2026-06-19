@@ -14,8 +14,10 @@ def test_init_command(tmp_path, monkeypatch):
 
     print(f"\n[Test] Using temporary directory: {base_dir}")
 
-    # Mock the global config_manager in main.py
-    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+    # Mock the global config_manager in cli modules
+    monkeypatch.setattr("job_cd.cli.app.config_manager", test_cm)
+    monkeypatch.setattr("job_cd.cli.commands.config_manager", test_cm)
+    monkeypatch.setattr("job_cd.cli.interactive.config_manager", test_cm)
     # Mock the global config_manager in providers to avoid real path creation
     monkeypatch.setattr("job_cd.providers.database.config_manager", test_cm)
     monkeypatch.setattr("job_cd.providers.cache.config_manager", test_cm)
@@ -74,7 +76,8 @@ def test_config_view_mode(tmp_path, monkeypatch):
     env_file.write_text("GOOGLE_API_KEY=test-key\nSMTP_SERVER=smtp.example.com\n")
 
     test_cm = ConfigManager(base_path=base_dir)
-    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+    monkeypatch.setattr("job_cd.cli.commands.config_manager", test_cm)
+    monkeypatch.setattr("job_cd.cli.app.config_manager", test_cm)
 
     result = runner.invoke(app, ["config"])
 
@@ -91,7 +94,8 @@ def test_config_view_mode_missing_env(tmp_path, monkeypatch):
     """Test that 'config' shows an error when .env does not exist."""
     base_dir = tmp_path / "jobcd_test"
     test_cm = ConfigManager(base_path=base_dir)
-    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+    monkeypatch.setattr("job_cd.cli.commands.config_manager", test_cm)
+    monkeypatch.setattr("job_cd.cli.app.config_manager", test_cm)
 
     result = runner.invoke(app, ["config"])
 
@@ -111,7 +115,8 @@ def test_config_edit_mode(tmp_path, monkeypatch):
     env_file.write_text("GOOGLE_API_KEY=test-key\n")
 
     test_cm = ConfigManager(base_path=base_dir)
-    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+    monkeypatch.setattr("job_cd.cli.commands.config_manager", test_cm)
+    monkeypatch.setattr("job_cd.cli.app.config_manager", test_cm)
 
     launch_mock = MagicMock()
     monkeypatch.setattr("typer.launch", launch_mock)
@@ -136,7 +141,8 @@ def test_config_edit_alias(tmp_path, monkeypatch):
     env_file.write_text("GOOGLE_API_KEY=test-key\n")
 
     test_cm = ConfigManager(base_path=base_dir)
-    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+    monkeypatch.setattr("job_cd.cli.commands.config_manager", test_cm)
+    monkeypatch.setattr("job_cd.cli.app.config_manager", test_cm)
 
     launch_mock = MagicMock()
     monkeypatch.setattr("typer.launch", launch_mock)
