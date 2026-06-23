@@ -13,7 +13,11 @@ class SmtpEmailSender(EmailSenderStrategy):
     """
     def __init__(self):
         self.smtp_server = os.environ.get('SMTP_SERVER', "smtp.gmail.com")
-        self.smtp_port = os.environ.get('SMTP_PORT', 587)
+        raw_port = os.environ.get('SMTP_PORT', "587")
+        try:
+            self.smtp_port = int(raw_port)
+        except (ValueError, TypeError):
+            self.smtp_port = 587
         self.smtp_username = os.environ.get('SMTP_USERNAME')
         self.smtp_password = os.environ.get('SMTP_PASSWORD')
 
@@ -21,6 +25,14 @@ class SmtpEmailSender(EmailSenderStrategy):
             logging.error("SMTP credentials not set")
             raise ValueError("SMTP credentials not set")
 
+    def _connect(self):
+        if self.smtp_port == 465:
+            server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port)
+        else:
+            server = smtplib.SMTP(self.smtp_server, self.smtp_port)
+            server.ehlo()
+            server.starttls()
+        return server
 
     def send_email(self, draft: EmailDraft):
         logging.info(f"Sending email to {draft.recipient_email} with subject: {draft.subject}")
@@ -31,17 +43,8 @@ class SmtpEmailSender(EmailSenderStrategy):
 
         msg.set_content(draft.body, subtype='html')
         try:
-            # 1. Connect to the server
-            server = smtplib.SMTP(self.smtp_server, self.smtp_port)
-            server.ehlo()
-
-            # 2. Secure the connection with TLS
-            server.starttls()
-
-            # 3. Login using your App Password
+            server = self._connect()
             server.login(self.smtp_username, self.smtp_password)
-
-            # 4. Send the payload
             server.send_message(msg)
             server.quit()
 

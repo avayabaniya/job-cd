@@ -1,10 +1,97 @@
 import json
 import logging
+import os
 import subprocess
 from typing import Optional
 
+import requests
+
 from job_cd.core.interfaces import EmailComposerStrategy
 from job_cd.core.models import Job, Company, Contact, DeploymentProfile, EmailDraft
+
+
+class MistralEmailComposer(EmailComposerStrategy):
+    """
+    Uses Mistral AI API to draft personalized cold emails
+    based on the job description, the candidate's resume, and the contact.
+    """
+    def __init__(self, model_name: str = "mistral-small-latest"):
+        self.api_key = os.getenv("MISTRAL_API_KEY")
+        if not self.api_key:
+            raise ValueError("MISTRAL_API_KEY not found in environment variables.")
+        self.model_name = model_name
+        self.api_url = "https://api.mistral.ai/v1/chat/completions"
+
+    def draft_email(self, job: Job, company: Company, contact: Contact, profile: DeploymentProfile) -> Optional[EmailDraft]:
+        logging.info(f"Drafting email for {contact.name} at {contact.company.name}...")
+
+        default_hook = profile.default_hook or f"I recently saw the open {job.title} role and love the direction your team is heading."
+        default_ask = profile.default_ask or "I would truly appreciate any guidance you could provide, whether through a referral, connecting me with the team, or a brief chat."
+        resume_url = profile.resume_url or "https://linkedin.com/in/ted-lasso"
+
+        prompt = f"""You are writing a personalized cold email for a job application.
+
+JOB INFO:
+Company: {company.name}
+Job Title: {job.title}
+Job URL: {job.job_url}
+Job Description: {job.job_description[:3000]}
+
+CANDIDATE INFO:
+Name: {profile.first_name} {profile.last_name}
+Role: {profile.current_role}
+Resume: {profile.resume_text}
+
+RECIPIENT:
+Name: {contact.first_name}
+Title: {contact.title}
+
+Write a cold email using this structure:
+- Opening hook: {default_hook}
+- Value bridge: ONE sentence connecting the company's need with a specific metric/achievement from the candidate's resume (first person, no fluff)
+- Call to action: {default_ask}
+- Signature: {profile.first_name} {profile.last_name}
+
+Use HTML <br> for line breaks and <a> for links.
+
+Respond ONLY with valid JSON matching this exact schema:
+{{"subject": "email subject line", "body": "full HTML email body", "sender_email": "{profile.email}", "recipient_email": "{contact.email}"}}"""
+
+        try:
+            response = requests.post(
+                self.api_url,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model_name,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.3,
+                    "max_tokens": 800,
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            raw = data["choices"][0]["message"]["content"].strip()
+            draft_data = json.loads(raw)
+            draft = EmailDraft(**draft_data)
+
+            logging.info(f"Successfully drafted email for {contact.email}")
+            return draft
+
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Mistral API request failed: {e}")
+            return None
+        except (json.JSONDecodeError, KeyError) as e:
+            logging.error(f"Failed to parse Mistral response: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"Failed to draft email for {contact.name}: {e}")
+            return None
 
 
 class GeminiCliEmailComposer(EmailComposerStrategy):
@@ -85,7 +172,7 @@ class GeminiCliEmailComposer(EmailComposerStrategy):
 
         try:
             process = subprocess.run(
-                ["gemini", "-m", self.model_name, "-p", prompt, "--output-format", "json"],
+                ["gemini", "-m", self.model_name, "-p", prompt, "--output-format", "json", "--skip-trust"],
                 input=context,
                 capture_output=True,
                 text=True,

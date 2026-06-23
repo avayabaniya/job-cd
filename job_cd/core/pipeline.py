@@ -1,5 +1,6 @@
 import logging
 import uuid
+from urllib.parse import urlparse
 
 import typer
 from job_cd.core.interfaces import (
@@ -15,6 +16,29 @@ from job_cd.core.models import (
     DeploymentStatus, Outreach, Company
 )
 from job_cd.utils import get_next_scheduled_time
+
+
+JOB_BOARD_DOMAINS = {
+    "linkedin.com", "indeed.com", "glassdoor.com", "monster.com",
+    "ziprecruiter.com", "craigslist.org", "bdjobs.com", "jobs.bdjobs.com",
+    "careerbuilder.com", "dice.com", "simplyhired.com", "naukri.com",
+    "upwork.com", "freelancer.com", "wellfound.com", "angel.co",
+    "workable.com", "greenhouse.io", "lever.co", "ashbyhq.com",
+    "breezy.hr", "smartrecruiters.com", "icims.com", "taleo.net",
+    "jobvite.com", "myworkdayjobs.com", "careers.google.com",
+}
+
+
+def _derive_domain_from_url(url: str) -> str:
+    hostname = urlparse(url).hostname or ""
+    return hostname.removeprefix("www.")
+
+
+def _guess_company_domain(company_name: str) -> str:
+    """Guess a company domain from its name, e.g. 'Smart Framework' -> 'smartframework.com'"""
+    name = company_name.lower().strip()
+    name = name.replace(" ", "").replace("-", "").replace("_", "")
+    return f"{name}.com"
 
 
 class JobPipelineEngine:
@@ -63,8 +87,9 @@ class ExtractorStep(PipelineStep):
     """
     Executes the company extraction phase of the pipeline.
 
-    Bypassing the Extractor if the user provided complete manual overrides.
-    If partial overrides are provided, they are merged with the Extractor's output
+    Priority:
+      1. Manual CLI overrides (--title, --company, --domain) — highest
+      2. AI extraction (Mistral) — reads job description, uses scraped metadata as hints
     """
     def __init__(self, extractor: CompanyExtractorStrategy):
         self.extractor = extractor
@@ -75,9 +100,12 @@ class ExtractorStep(PipelineStep):
 
         logging.info(f"Extracting company details for Job: {deployment.job.id}")
 
-        # Bypass Extractor entirely if we have all required manual data
+        job = deployment.job
         intake_payload = deployment.intake_payload
+
+        # --- Priority 1: Manual CLI overrides ---
         if intake_payload and intake_payload.manual_company and intake_payload.manual_domain and intake_payload.manual_title:
+            typer.secho("📄  Using manual CLI overrides.", fg=typer.colors.GREEN, bold=True)
             company = Company(
                 id=str(uuid.uuid4()),
                 name=intake_payload.manual_company,
@@ -88,23 +116,23 @@ class ExtractorStep(PipelineStep):
             deployment.status = DeploymentStatus.EXTRACTED
             return deployment
 
-        company = self.extractor.extract_company(deployment.job)
+        # --- Priority 2: AI extraction (Mistral) ---
+        if job.title or job.employer:
+            typer.secho(f"🧠  AI verifying with hints: title={job.title}, company={job.employer}", fg=typer.colors.BLUE, bold=True)
 
-        # Check if the extractor failed to return any company
+        company = self.extractor.extract_company(job)
+
         if not company:
-            logging.error(f"🚨 ExtractorStep failed to extract company details for Job {deployment.job.id}.")
             deployment.status = DeploymentStatus.FAILED
             return deployment
 
-        # Override using manual overrides if present
+        # Manual overrides for partial data
         if intake_payload:
             company.job_title = intake_payload.manual_title or company.job_title
             company.name = intake_payload.manual_company or company.name
             company.domain = intake_payload.manual_domain or company.domain
 
-        # Check if the company object has the minimum data required to move further in the pipeline
         if not company.job_title or not company.name or not company.domain:
-            logging.error(f"🚨 ExtractorStep failed to extract all required company details for Job {deployment.job.id}.")
             deployment.status = DeploymentStatus.FAILED
             return deployment
 
@@ -145,6 +173,7 @@ class FinderStep(PipelineStep):
         contacts = self.finder.find_contacts(deployment.company, deployment.profile)
 
         if not contacts:
+            logging.info(f"No contacts found for {deployment.company.name}.")
             deployment.status = DeploymentStatus.FAILED
             return deployment
 
@@ -160,7 +189,7 @@ class FinderStep(PipelineStep):
         if deployment.status == DeploymentStatus.CONTACTS_FOUND:
             return f"🎯 Found {len(deployment.outreaches)} contacts for Job: {deployment.job.id}"
         elif deployment.status == DeploymentStatus.FAILED:
-            return f"🚨 ContactFinderStep failed for Job {deployment.job.id}. Halting branch."
+            return f"⏭️  No contacts found for {deployment.company.name}."
         else:
             return f"🔍 Searching contact details for Job: {deployment.job.id}"
 
