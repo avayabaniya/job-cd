@@ -4,6 +4,7 @@ import os
 import uuid
 import subprocess
 import typer
+import requests
 from google import genai
 from google.genai import types
 from typing import Optional
@@ -149,4 +150,82 @@ class GeminiCliExtractor(CompanyExtractorStrategy):
             return None
         except Exception as e:
             logging.error(f"Failed to extract company details for job {job.id}: {e}")
+            return None
+
+
+class MistralExtractor(CompanyExtractorStrategy):
+    """
+    Uses Mistral AI API to extract company name, domain, and job title
+    from a raw job description.
+    """
+    def __init__(self, model_name: str = "mistral-small-latest"):
+        self.api_key = os.getenv("MISTRAL_API_KEY")
+        if not self.api_key:
+            raise ValueError("MISTRAL_API_KEY not found in environment variables.")
+        self.model_name = model_name
+        self.api_url = "https://api.mistral.ai/v1/chat/completions"
+
+    def extract_company(self, job: Job) -> Optional[Company]:
+        logging.info(f"Asking Mistral to extract company details for job ID: {job.id}")
+
+        if not job.job_description:
+            logging.error("Job has no description text. Cannot extract company.")
+            return None
+
+        hints = ""
+        if job.title:
+            hints += f"\nHINT - title from page: {job.title}"
+        if job.employer:
+            hints += f"\nHINT - company from page: {job.employer}"
+
+        prompt = f"""Extract the job title, official company name and their primary website domain (e.g. 'google.com', 'stripe.com') from the job posting below.
+{hints}
+
+IMPORTANT: Use the job description text as your primary source. Only use hints if they match the description.
+Do NOT return job board domains (like bdjobs.com, indeed.com) as the company domain.
+
+Job URL: {job.job_url}
+
+Job Description:
+{job.job_description[:4000]}
+
+Respond ONLY with valid JSON matching this exact schema:
+{{"name": "company name", "domain": "company domain", "job_title": "job title"}}"""
+
+        try:
+            typer.secho("🧠  Mistral AI is analyzing the job...", fg=typer.colors.BLUE, bold=True)
+            response = requests.post(
+                self.api_url,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model_name,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.1,
+                    "max_tokens": 500,
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            raw = data["choices"][0]["message"]["content"].strip()
+            company_data = json.loads(raw)
+            company_data["id"] = str(uuid.uuid4())
+            company = Company(**company_data)
+
+            logging.info(f"Successfully extracted: {company.name} ({company.domain})")
+            return company
+
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Mistral API request failed: {e}")
+            return None
+        except (json.JSONDecodeError, KeyError, ValidationError) as e:
+            logging.error(f"Failed to parse Mistral response: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"Failed to extract company details: {e}")
             return None

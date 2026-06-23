@@ -14,8 +14,8 @@ from job_cd.core.dispatcher import Dispatcher
 from job_cd.core.models import DeploymentProfile, IntakePayload
 from job_cd.core.pipeline import ExtractorStep, JobPipelineEngine, FinderStep, EmailComposerStep
 from job_cd.enums import DeploymentStatus
-from job_cd.providers.composer import GeminiCliEmailComposer
-from job_cd.providers.extractor import GeminiCliExtractor
+from job_cd.providers.composer import MistralEmailComposer
+from job_cd.providers.extractor import MistralExtractor
 from job_cd.providers.finder import get_finder
 from job_cd.providers.intake import SimpleWebIntake
 from job_cd.providers.sender import SmtpEmailSender
@@ -109,7 +109,7 @@ def do_config(edit: bool = False):
         )
 
 
-def do_build(url: str, title: Optional[str] = None, company: Optional[str] = None, domain: Optional[str] = None, finder: str = "apollo"):
+def do_build(url: str, title: Optional[str] = None, company: Optional[str] = None, domain: Optional[str] = None, finder: str = "auto"):
     """Execute the job pipeline for a job posting."""
     console.print(
         Panel(f"[bold blue]🚀  Starting Build Pipeline[/]\n[white]🔗  {url}[/]",
@@ -138,14 +138,14 @@ def do_build(url: str, title: Optional[str] = None, company: Optional[str] = Non
 
     default_profile = DeploymentProfile(**profile_data)
 
-    intake = SimpleWebIntake()
-    extractor = GeminiCliExtractor()
+    intake = SimpleWebIntake(console=console)
+    extractor = MistralExtractor()
     try:
         finder = get_finder(name=finder, cache=cache)
     except ValueError as e:
         console.print(f"[red]{e}[/]")
         return
-    composer = GeminiCliEmailComposer()
+    composer = MistralEmailComposer()
 
     engine = JobPipelineEngine(
         intake_strategy=intake,

@@ -2,7 +2,6 @@ import os
 import uuid
 import logging
 import time
-import traceback
 from typing import List, Optional
 
 import requests
@@ -75,7 +74,6 @@ class ApolloFinder(ContactFinderStrategy):
 
     def find_contacts(self, company: Company, profile: DeploymentProfile) -> List[Contact]:
         logging.info(f"Hunting for contacts at {company.domain} using Apollo...")
-        typer.secho(f"  Scouting Apollo for people at {company.domain}...", fg=typer.colors.CYAN)
 
         try:
             params = {
@@ -96,12 +94,10 @@ class ApolloFinder(ContactFinderStrategy):
             people_search_results = search_data.get('people', [])
 
             if not people_search_results:
-                logging.warning(f"No contacts found at {company.domain}.")
-                typer.secho(f"  No exact matches found at {company.domain}. Moving on!", fg=typer.colors.YELLOW)
+                logging.info(f"No contacts found at {company.domain}.")
                 return []
 
             logging.info(f"Found {len(people_search_results)} potential matches. Enriching data...")
-            typer.secho(f"  Found {len(people_search_results)} prospects! Digging up their emails...", fg=typer.colors.MAGENTA)
 
             contacts = []
             people_to_enrich = []
@@ -153,21 +149,13 @@ class ApolloFinder(ContactFinderStrategy):
                     self.cache.set(contact.id, contact.model_dump())
 
             logging.info(f"Successfully enriched {len(contacts)} actionable contacts!")
-            if contacts:
-                typer.secho(f"  Success! Locked in {len(contacts)} verified contacts.", fg=typer.colors.GREEN, bold=True)
-            else:
-                typer.secho("  Found people, but Apollo couldn't verify any emails. Skipping...",
-                            fg=typer.colors.YELLOW)
             return contacts
 
         except requests.exceptions.RequestException as e:
-            logging.error(f"Apollo API network request failed: {e}")
-            typer.secho(f"  Network hiccup reaching Apollo.io: {e}", fg=typer.colors.RED)
+            logging.debug(f"Apollo API failed: {e}")
             return []
         except Exception as e:
-            logging.exception(f"Unexpected error processing Apollo data: {e}")
-            typer.secho(f"  Something broke while parsing Apollo data: {e}", fg=typer.colors.RED)
-            typer.secho(traceback.format_exc(), fg=typer.colors.RED)
+            logging.debug(f"Apollo unexpected error: {e}")
             return []
 
 
@@ -196,7 +184,6 @@ class LeadMagicFinder(ContactFinderStrategy):
 
     def find_contacts(self, company: Company, profile: DeploymentProfile) -> List[Contact]:
         logging.info(f"Hunting for contacts at {company.domain} using LeadMagic...")
-        typer.secho(f"  Scouting LeadMagic for people at {company.domain}...", fg=typer.colors.CYAN)
 
         try:
             # Step 1: find employees at the company domain
@@ -214,10 +201,7 @@ class LeadMagicFinder(ContactFinderStrategy):
             data = resp.json()
             employees = data.get("employees") or data.get("data", [])
             if not employees:
-                typer.secho(f"  No employees found at {company.domain} via LeadMagic.", fg=typer.colors.YELLOW)
                 return []
-
-            typer.secho(f"  Found {len(employees)} potential contacts. Resolving emails...", fg=typer.colors.MAGENTA)
 
             contacts = []
             for emp in employees:
@@ -240,19 +224,13 @@ class LeadMagicFinder(ContactFinderStrategy):
                 contacts.append(contact)
                 self.cache.set(contact.id, contact.model_dump())
 
-            if contacts:
-                typer.secho(f"  Resolved {len(contacts)} contacts via LeadMagic!", fg=typer.colors.GREEN, bold=True)
-            else:
-                typer.secho("  Found people but no emails returned by LeadMagic.", fg=typer.colors.YELLOW)
             return contacts
 
         except requests.exceptions.RequestException as e:
-            logging.error(f"LeadMagic API request failed: {e}")
-            typer.secho(f"  LeadMagic API error: {e}", fg=typer.colors.RED)
+            logging.debug(f"LeadMagic API failed: {e}")
             return []
         except Exception as e:
-            logging.exception(f"Unexpected error in LeadMagic finder: {e}")
-            typer.secho(f"  Something broke while processing LeadMagic data: {e}", fg=typer.colors.RED)
+            logging.debug(f"LeadMagic unexpected error: {e}")
             return []
 
 
@@ -279,7 +257,6 @@ class GetProspectFinder(ContactFinderStrategy):
 
     def find_contacts(self, company: Company, profile: DeploymentProfile) -> List[Contact]:
         logging.info(f"Hunting for contacts at {company.domain} using GetProspect...")
-        typer.secho(f"  Searching GetProspect for people at {company.domain}...", fg=typer.colors.CYAN)
 
         try:
             # Step 1: search contacts in the B2B database
@@ -294,17 +271,12 @@ class GetProspectFinder(ContactFinderStrategy):
                 timeout=30,
             )
             if resp.status_code == 403:
-                typer.secho(
-                    "  GetProspect B2B search requires a paid plan. Trying email-finder with title-based patterns...",
-                    fg=typer.colors.YELLOW,
-                )
                 return self._find_by_title_patterns(company, profile)
 
             resp.raise_for_status()
             data = resp.json()
             results = data.get("data") or data.get("contacts", [])
             if not results:
-                typer.secho(f"  No contacts found at {company.domain} via GetProspect.", fg=typer.colors.YELLOW)
                 return []
 
             contacts = []
@@ -327,19 +299,13 @@ class GetProspectFinder(ContactFinderStrategy):
                 contacts.append(contact)
                 self.cache.set(contact.id, contact.model_dump())
 
-            if contacts:
-                typer.secho(f"  Found {len(contacts)} contacts via GetProspect!", fg=typer.colors.GREEN, bold=True)
-            else:
-                typer.secho("  No verified emails returned by GetProspect.", fg=typer.colors.YELLOW)
             return contacts
 
         except requests.exceptions.RequestException as e:
-            logging.error(f"GetProspect API request failed: {e}")
-            typer.secho(f"  GetProspect API error: {e}", fg=typer.colors.RED)
+            logging.debug(f"GetProspect API failed: {e}")
             return []
         except Exception as e:
-            logging.exception(f"Unexpected error in GetProspect finder: {e}")
-            typer.secho(f"  Something broke while processing GetProspect data: {e}", fg=typer.colors.RED)
+            logging.debug(f"GetProspect unexpected error: {e}")
             return []
 
     def _find_by_title_patterns(self, company: Company, profile: DeploymentProfile) -> List[Contact]:
@@ -386,10 +352,6 @@ class GetProspectFinder(ContactFinderStrategy):
                 except requests.exceptions.RequestException:
                     continue
 
-        if contacts:
-            typer.secho(f"  Found {len(contacts)} contacts via GetProspect patterns!", fg=typer.colors.GREEN, bold=True)
-        else:
-            typer.secho("  Could not find any emails via GetProspect pattern fallback.", fg=typer.colors.YELLOW)
         return contacts
 
 
@@ -434,7 +396,6 @@ class SnovioFinder(ContactFinderStrategy):
 
     def find_contacts(self, company: Company, profile: DeploymentProfile) -> List[Contact]:
         logging.info(f"Hunting for contacts at {company.domain} using Snov.io...")
-        typer.secho(f"  Searching Snov.io for people at {company.domain}...", fg=typer.colors.CYAN)
 
         try:
             # Step 1: start domain search (async)
@@ -448,10 +409,9 @@ class SnovioFinder(ContactFinderStrategy):
             task_data = start_resp.json()
             task_hash = task_data.get("data", {}).get("task_hash") or task_data.get("task_hash")
             if not task_hash:
-                typer.secho("  Snov.io domain search could not start.", fg=typer.colors.YELLOW)
                 return []
 
-            # Step 2: poll for completion
+
             result_url = f"{self.base_url}/v2/domain-search/result/{task_hash}"
             for attempt in range(10):
                 time.sleep(2)
@@ -461,10 +421,9 @@ class SnovioFinder(ContactFinderStrategy):
                 if status == "completed":
                     break
             else:
-                typer.secho("  Snov.io domain search timed out.", fg=typer.colors.YELLOW)
                 return []
 
-            # Step 3: get prospect emails
+
             prospects_resp = requests.post(
                 f"{self.base_url}/v2/domain-search/domain-emails/start",
                 headers=self._auth_headers(),
@@ -476,7 +435,6 @@ class SnovioFinder(ContactFinderStrategy):
 
             email_results = emails_data.get("data") or emails_data.get("emails", [])
             if not email_results:
-                typer.secho(f"  No emails found at {company.domain} via Snov.io.", fg=typer.colors.YELLOW)
                 return []
 
             contacts = []
@@ -498,17 +456,72 @@ class SnovioFinder(ContactFinderStrategy):
                 contacts.append(contact)
                 self.cache.set(contact.id, contact.model_dump())
 
-            if contacts:
-                typer.secho(f"  Found {len(contacts)} contacts via Snov.io!", fg=typer.colors.GREEN, bold=True)
-            else:
-                typer.secho("  Snov.io returned results but no usable emails.", fg=typer.colors.YELLOW)
             return contacts
 
         except requests.exceptions.RequestException as e:
-            logging.error(f"Snov.io API request failed: {e}")
-            typer.secho(f"  Snov.io API error: {e}", fg=typer.colors.RED)
+            logging.debug(f"Snov.io API failed: {e}")
             return []
         except Exception as e:
-            logging.exception(f"Unexpected error in Snov.io finder: {e}")
-            typer.secho(f"  Something broke while processing Snov.io data: {e}", fg=typer.colors.RED)
+            logging.debug(f"Snov.io unexpected error: {e}")
             return []
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# AUTO-FALLBACK: tries every registered provider in order
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class AutoFallbackFinder(ContactFinderStrategy):
+    """
+    Tries every registered lead provider in sequence until one returns contacts.
+    Swallows individual provider errors silently — only reports if ALL fail.
+
+    Fallback order: apollo → leadmagic → getprospect → snovio
+    """
+    def __init__(self, cache: CacheStrategy):
+        self.cache = cache
+        self.providers = []
+
+        order = ["apollo", "leadmagic", "getprospect", "snovio"]
+        for name in order:
+            cls = PROVIDER_REGISTRY.get(name)
+            if cls:
+                try:
+                    self.providers.append((name, cls(cache=cache)))
+                except Exception:
+                    continue
+
+    def find_contacts(self, company: Company, profile: DeploymentProfile) -> List[Contact]:
+        errors = []
+
+        for name, provider in self.providers:
+            typer.secho(f"  [{name}] Searching for contacts at {company.domain}...", fg=typer.colors.CYAN)
+            try:
+                contacts = provider.find_contacts(company, profile)
+                if contacts:
+                    if len(self.providers) > 1:
+                        typer.secho(f"  [{name}] Found {len(contacts)} contacts.", fg=typer.colors.GREEN, bold=True)
+                    return contacts
+            except Exception as e:
+                msg = str(e).split("\n")[0][:100]
+                errors.append(f"{name}: {msg}")
+                continue
+
+        if errors:
+            typer.secho(
+                "  All lead providers failed. Try --finder <name> to pick one:\n"
+                f"    apollo, leadmagic, getprospect, snovio",
+                fg=typer.colors.YELLOW,
+            )
+        else:
+            typer.secho(
+                "  No contacts found by any provider.",
+                fg=typer.colors.YELLOW,
+            )
+        return []
+
+
+@register_provider("auto")
+class _AutoAlias(AutoFallbackFinder):
+    """Alias so --finder auto works the same as AutoFallbackFinder."""
+    pass
