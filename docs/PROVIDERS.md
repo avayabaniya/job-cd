@@ -3,7 +3,9 @@
 `job-cd` is designed to be provider-agnostic. Below are the third-party services currently implemented as concrete strategies.
 
 ## 🤖 AI & LLMs (Extraction & Composition)
-- **Google Gemini CLI**: Used for high-speed, cost-effective job detail extraction and hyper-personalized email composition.
+- **Antigravity CLI** (Default): Used for high-speed, cost-effective job detail extraction and hyper-personalized email composition.
+  - **Implementation**: `AntigravityCliExtractor`, `AntigravityCliEmailComposer`
+- **Google Gemini CLI**: Alternate provider for job detail extraction and hyper-personalized email composition.
   - **Implementation**: `GeminiCliExtractor`, `GeminiCliEmailComposer`
   - **Requirement**: `GOOGLE_API_KEY`
 
