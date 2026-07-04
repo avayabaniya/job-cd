@@ -12,7 +12,7 @@
 
 #### Prerequisites
 - **Python 3.12+**
-- **[Gemini CLI](https://geminicli.com/docs/get-started/installation/):** Used by default for AI tasks. *(Can be swapped for any AI tool or LLM).*
+- **Antigravity CLI:** Used by default for AI tasks. *(Can be swapped for any AI tool or LLM, like Gemini CLI).*
 - **Apollo.io API Key:** Default for contact discovery. *(Can be swapped for other lead discovery services).*
 - **SMTP Credentials:** For email dispatch. *(Works with any SMTP-compatible provider).*
 
@@ -55,7 +55,7 @@ jobcd preview
 jobcd dispatch
 ```
 
----
+--- 
 
 ## ✨ Features
 
@@ -110,9 +110,9 @@ SMTP_PASSWORD=your_app_password
 | Component | Default Provider | Purpose |
 | :--- | :--- | :--- |
 | **Intake** | `SimpleWebIntake` | Fetches raw data from job URLs. |
-| **Extraction** | `GeminiCliExtractor` | Parses job text into structured data. |
+| **Extraction** | `AntigravityCliExtractor` | Parses job text into structured data. |
 | **Discovery** | `ApolloFinder` | Finds relevant recruiter/manager emails. |
-| **Composition** | `GeminiCliEmailComposer` | Drafts the personalized email body. |
+| **Composition** | `AntigravityCliEmailComposer` | Drafts the personalized email body. |
 | **Dispatch** | `SmtpEmailSender` | Sends the final emails to recipients. |
 
 ---
