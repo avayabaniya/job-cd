@@ -150,3 +150,79 @@ class GeminiCliExtractor(CompanyExtractorStrategy):
         except Exception as e:
             logging.error(f"Failed to extract company details for job {job.id}: {e}")
             return None
+
+
+class AntigravityCliExtractor(CompanyExtractorStrategy):
+    """
+    Run Antigravity CLI in headless mode to read a raw job description and extract
+    the standardized Company details.
+    """
+    def __init__(self, model_name: str = "gemini-3.5-flash"):
+        self.model_name = model_name
+
+    def extract_company(self, job: Job) -> Optional[Company]:
+        logging.info(f"Asking Antigravity CLI to extract company details for job ID: {job.id}")
+
+        if not job.job_description:
+            logging.error("Job has no description text. Cannot extract company.")
+            return None
+
+        prompt = f"""
+        Extract the job title, official company name and their primary website domain (e.g., 'google.com', 'stripe.com') from the provided text.
+        If the domain is not explicitly mentioned, infer it from your internal knowledge.
+        
+        CRITICAL INSTRUCTION: You must respond ONLY with a valid JSON object matching this exact schema:
+        {{
+            "name": "string",
+            "domain": "string",
+            "job_title": "string"
+        }}
+        Do not include markdown blocks (like ```json), explanations, or any other text.
+        """
+
+        context = f"Job URL: {job.job_url}\n\nJob Description Text:\n{job.job_description}"
+        full_prompt = f"{prompt}\n\n{context}"
+
+        try:
+            typer.secho("👀  Antigravity CLI is taking a look...", fg=typer.colors.BLUE, bold=True)
+            process = subprocess.run(
+                ["agy", "--model", self.model_name, "-p", full_prompt],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            raw_ai_text = process.stdout.strip()
+
+            typer.secho("📊  Antigravity CLI raw output:", fg=typer.colors.BLUE, bold=True)
+            typer.secho(raw_ai_text, fg=typer.colors.YELLOW)
+
+            if raw_ai_text.startswith("```json"):
+                raw_ai_text = raw_ai_text.replace("```json", "", 1)
+            if raw_ai_text.endswith("```"):
+                raw_ai_text = raw_ai_text[:-3]
+            raw_ai_text = raw_ai_text.strip()
+
+            company_data = json.loads(raw_ai_text)
+            company_data["id"] = str(uuid.uuid4())
+
+            company = Company(**company_data)
+
+            logging.info(f"Successfully extracted: {company.name} ({company.domain})")
+            return company
+
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Antigravity CLI command failed (Exit code {e.returncode}): {e.stderr}")
+            return None
+        except FileNotFoundError:
+            logging.error("Antigravity CLI (agy) not found.")
+            return None
+        except json.JSONDecodeError as e:
+            logging.error(f"Failed to parse JSON from Antigravity CLI output: {e}")
+            return None
+        except ValidationError as e:
+            logging.error(f"Failed to validate company data for job {job.id}: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"Failed to extract company details for job {job.id}: {e}")
+            return None

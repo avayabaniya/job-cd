@@ -6,14 +6,15 @@ from dotenv import load_dotenv
 
 from job_cd.core.config import config_manager
 from job_cd.core.dispatcher import Dispatcher
-from job_cd.core.interfaces import CacheStrategy
+from job_cd.core.interfaces import CacheStrategy, CompanyExtractorStrategy, EmailComposerStrategy, \
+    ContactFinderStrategy, JobIntakeStrategy
 from job_cd.core.models import DeploymentProfile, IntakePayload
 from job_cd.core.pipeline import ExtractorStep, JobPipelineEngine, FinderStep, EmailComposerStep
 from job_cd.enums import DeploymentStatus
 from job_cd.providers.cache import LocalCache
-from job_cd.providers.composer import GeminiCliEmailComposer
+from job_cd.providers.composer import GeminiCliEmailComposer, AntigravityCliEmailComposer
 from job_cd.providers.database import SQLiteDatabaseAdapter
-from job_cd.providers.extractor import GeminiExtractor, GeminiCliExtractor
+from job_cd.providers.extractor import GeminiExtractor, GeminiCliExtractor, AntigravityCliExtractor
 from job_cd.providers.finder import ApolloFinder
 from job_cd.providers.intake import SimpleWebIntake
 from job_cd.providers.sender import SmtpEmailSender
@@ -28,9 +29,26 @@ def get_db():
     """Factory function to provide the db strategy."""
     return SQLiteDatabaseAdapter()
 
+def get_intake() -> JobIntakeStrategy:
+    """Factory function to provide the intake strategy."""
+    return SimpleWebIntake()
+
 def get_cache(filename: str = "contacts.json") -> CacheStrategy:
     """Factory function to provide the cache strategy."""
     return LocalCache(filename=filename)
+
+def get_extractor() -> CompanyExtractorStrategy:
+    """Factory function to provide the extractor strategy."""
+    return AntigravityCliExtractor()
+
+def get_contact_finder(cache_strategy: Optional[CacheStrategy]) -> ContactFinderStrategy:
+    """Factory function to provide the finder strategy."""
+    cache_strategy = cache_strategy or get_cache()
+    return ApolloFinder(cache=cache_strategy)
+
+def get_composer() -> EmailComposerStrategy:
+    """Factory function to provide the composer strategy."""
+    return AntigravityCliEmailComposer()
 
 @app.command()
 def init():
@@ -126,10 +144,10 @@ def build(
 
     default_profile = DeploymentProfile(**profile_data)
 
-    intake = SimpleWebIntake()
-    extractor = GeminiCliExtractor()
-    finder = ApolloFinder(cache=cache)
-    composer = GeminiCliEmailComposer()
+    intake = get_intake()
+    extractor = get_extractor()
+    finder = get_contact_finder(cache_strategy=cache)
+    composer = get_composer()
 
     
     engine = JobPipelineEngine(
