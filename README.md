@@ -73,7 +73,15 @@ jobcd dispatch
 `job-cd` stores its data and configuration in a global directory determined by your operating system (e.g., `~/Library/Application Support/jobcd` on macOS).
 
 ### 1. Environment Variables
-The `jobcd init` command creates a `.env` file in your global config directory. You can manually edit it to update your keys:
+The `jobcd init` command creates a `.env` file in your global config directory. You can view or edit it using `jobcd config`:
+
+```bash
+# View configuration
+jobcd config
+
+# Open in default editor
+jobcd config --edit
+```
 
 ```env
 GOOGLE_API_KEY=your_gemini_key
@@ -85,7 +93,18 @@ SMTP_PASSWORD=your_app_password
 ```
 
 ### 2. Personalization (Profiles)
-`job-cd` uses your profile to tailor outreach. A default profile is created in `.cache/profiles.json` within your global config directory:
+`job-cd` uses your profile to tailor outreach. A default profile is created in `.cache/profiles.json` within your global config directory. You can view or edit your profiles using `jobcd profile`:
+
+```bash
+# View all profiles
+jobcd profile
+
+# View a specific profile
+jobcd profile default
+
+# Open profiles.json in default editor
+jobcd profile --edit
+```
 
 ```json
 {

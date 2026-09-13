@@ -1,3 +1,4 @@
+import json
 import textwrap
 
 import typer
@@ -8,6 +9,7 @@ from job_cd.core.config import config_manager
 from job_cd.core.dispatcher import Dispatcher
 from job_cd.core.interfaces import CacheStrategy, CompanyExtractorStrategy, EmailComposerStrategy, \
     ContactFinderStrategy, JobIntakeStrategy
+from job_cd.core.io import read_json
 from job_cd.core.models import DeploymentProfile, IntakePayload
 from job_cd.core.pipeline import ExtractorStep, JobPipelineEngine, FinderStep, EmailComposerStep
 from job_cd.enums import DeploymentStatus
@@ -356,6 +358,40 @@ def config(
         typer.launch(str(env_path))
     else:
         typer.echo(env_path.read_text(encoding="utf-8"))
+
+
+@app.command()
+def profile(
+    name: Optional[str] = typer.Argument(
+        None, help="Name of the specific profile to view"
+    ),
+    edit: bool = typer.Option(
+        False, "--edit", "--open",
+        help="Open the profiles.json file in your default editor"
+    )
+):
+    """View or edit user profiles."""
+    profiles_path = config_manager.profiles_path
+
+    if not profiles_path.exists():
+        typer.secho(
+            "No profiles configuration found. Please run 'jobcd init' first.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+
+    if edit:
+        typer.launch(str(profiles_path))
+    else:
+        if name:
+            profiles = read_json(profiles_path)
+            if name not in profiles:
+                typer.secho(f"Profile '{name}' not found.", fg=typer.colors.RED)
+                raise typer.Exit(code=1)
+            typer.echo(json.dumps(profiles[name], indent=2))
+        else:
+            typer.echo(profiles_path.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     app()
