@@ -150,3 +150,158 @@ def test_config_edit_alias(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "WARNING" in result.stdout
     launch_mock.assert_called_once_with(str(env_file))
+
+
+def test_profile_view_mode(tmp_path, monkeypatch):
+    """Test that 'profile' displays the profiles.json content."""
+    base_dir = tmp_path / "jobcd_test"
+    cache_dir = base_dir / ".cache"
+    cache_dir.mkdir(parents=True)
+    profiles_file = cache_dir / "profiles.json"
+    profiles_data = {
+        "default": {
+            "first_name": "Ted",
+            "last_name": "Lasso",
+            "email": "ted.lasso@afcrichmond.com"
+        }
+    }
+    profiles_file.write_text(json.dumps(profiles_data, indent=2))
+
+    test_cm = ConfigManager(base_path=base_dir)
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    result = runner.invoke(app, ["profile"])
+
+    print("\n--- test_profile_view_mode ---")
+    print(result.stdout)
+    print("------------------------------\n")
+
+    assert result.exit_code == 0
+    assert "default" in result.stdout
+    assert "ted.lasso@afcrichmond.com" in result.stdout
+
+
+def test_profile_view_mode_missing_profiles(tmp_path, monkeypatch):
+    """Test that 'profile' shows an error when profiles.json does not exist."""
+    base_dir = tmp_path / "jobcd_test"
+    test_cm = ConfigManager(base_path=base_dir)
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    result = runner.invoke(app, ["profile"])
+
+    print("\n--- test_profile_view_mode_missing_profiles ---")
+    print(result.stdout)
+    print("----------------------------------------------\n")
+
+    assert result.exit_code == 1
+    assert "Please run 'jobcd init' first" in result.stdout
+
+
+def test_profile_view_specific_profile(tmp_path, monkeypatch):
+    """Test that 'profile <name>' displays only the specified profile."""
+    base_dir = tmp_path / "jobcd_test"
+    cache_dir = base_dir / ".cache"
+    cache_dir.mkdir(parents=True)
+    profiles_file = cache_dir / "profiles.json"
+    profiles_data = {
+        "default": {
+            "first_name": "Ted",
+            "last_name": "Lasso",
+            "email": "ted.lasso@afcrichmond.com"
+        },
+        "engineer": {
+            "first_name": "Coach",
+            "last_name": "Beard",
+            "email": "coach.beard@afcrichmond.com"
+        }
+    }
+    profiles_file.write_text(json.dumps(profiles_data, indent=2))
+
+    test_cm = ConfigManager(base_path=base_dir)
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    result = runner.invoke(app, ["profile", "default"])
+
+    print("\n--- test_profile_view_specific_profile ---")
+    print(result.stdout)
+    print("------------------------------------------\n")
+
+    assert result.exit_code == 0
+    assert "ted.lasso@afcrichmond.com" in result.stdout
+    assert "coach.beard@afcrichmond.com" not in result.stdout
+
+
+def test_profile_view_specific_profile_not_found(tmp_path, monkeypatch):
+    """Test that 'profile <name>' exits with error if profile does not exist."""
+    base_dir = tmp_path / "jobcd_test"
+    cache_dir = base_dir / ".cache"
+    cache_dir.mkdir(parents=True)
+    profiles_file = cache_dir / "profiles.json"
+    profiles_data = {
+        "default": {
+            "first_name": "Ted",
+            "last_name": "Lasso",
+            "email": "ted.lasso@afcrichmond.com"
+        }
+    }
+    profiles_file.write_text(json.dumps(profiles_data, indent=2))
+
+    test_cm = ConfigManager(base_path=base_dir)
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    result = runner.invoke(app, ["profile", "nonexistent"])
+
+    print("\n--- test_profile_view_specific_profile_not_found ---")
+    print(result.stdout)
+    print("----------------------------------------------------\n")
+
+    assert result.exit_code == 1
+    assert "Profile 'nonexistent' not found" in result.stdout
+
+
+def test_profile_edit_mode(tmp_path, monkeypatch):
+    """Test that 'profile --edit' opens profiles.json in default editor."""
+    base_dir = tmp_path / "jobcd_test"
+    cache_dir = base_dir / ".cache"
+    cache_dir.mkdir(parents=True)
+    profiles_file = cache_dir / "profiles.json"
+    profiles_file.write_text("{}")
+
+    test_cm = ConfigManager(base_path=base_dir)
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    launch_mock = MagicMock()
+    monkeypatch.setattr("typer.launch", launch_mock)
+
+    result = runner.invoke(app, ["profile", "--edit"])
+
+    print("\n--- test_profile_edit_mode ---")
+    print(result.stdout)
+    print("------------------------------\n")
+
+    assert result.exit_code == 0
+    launch_mock.assert_called_once_with(str(profiles_file))
+
+
+def test_profile_edit_alias(tmp_path, monkeypatch):
+    """Test that 'profile --open' behaves identically to '--edit'."""
+    base_dir = tmp_path / "jobcd_test"
+    cache_dir = base_dir / ".cache"
+    cache_dir.mkdir(parents=True)
+    profiles_file = cache_dir / "profiles.json"
+    profiles_file.write_text("{}")
+
+    test_cm = ConfigManager(base_path=base_dir)
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    launch_mock = MagicMock()
+    monkeypatch.setattr("typer.launch", launch_mock)
+
+    result = runner.invoke(app, ["profile", "--open"])
+
+    print("\n--- test_profile_edit_alias ---")
+    print(result.stdout)
+    print("-------------------------------\n")
+
+    assert result.exit_code == 0
+    launch_mock.assert_called_once_with(str(profiles_file))
