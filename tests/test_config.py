@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from job_cd.core.config import ConfigManager
+from job_cd.core.io import read_json
 
 
 def test_config_manager_paths(tmp_path):
@@ -19,6 +20,7 @@ def test_config_manager_paths(tmp_path):
     assert cm.db_path == base_dir / "job_history.db"
     assert cm.env_path == base_dir / ".env"
     assert cm.profiles_path == base_dir / ".cache" / "profiles.json"
+    assert cm.config_path == base_dir / "config.json"
     assert cm.contacts_cache_path == base_dir / ".cache" / "contacts.json"
     assert cm.get_cache_path("test.json") == base_dir / ".cache" / "test.json"
 
@@ -58,3 +60,41 @@ def test_config_manager_default_path(monkeypatch):
     print("-------------------------------------------\n")
 
     assert cm.app_dir == Path(mock_app_dir)
+
+
+def test_active_profile_defaults_and_persists(tmp_path):
+    """The selected profile should persist separately and fall back to default when absent."""
+    cm = ConfigManager(base_path=tmp_path / "jobcd_test")
+
+    assert cm.get_active_profile() == "default"
+
+    cm.set_active_profile("engineer")
+
+    assert cm.get_active_profile() == "engineer"
+    assert read_json(cm.config_path) == {"active_profile": "engineer"}
+
+
+def test_active_profile_falls_back_for_invalid_state(tmp_path):
+    """Malformed and non-object state must not prevent a safe default profile fallback."""
+    cm = ConfigManager(base_path=tmp_path / "jobcd_test")
+    cm.config_path.parent.mkdir(parents=True)
+
+    cm.config_path.write_text("{not valid json", encoding="utf-8")
+    assert cm.get_active_profile() == "default"
+
+    cm.config_path.write_text("[\"engineer\"]", encoding="utf-8")
+    assert cm.get_active_profile() == "default"
+
+    cm.config_path.write_text('{"active_profile": " engineer "}', encoding="utf-8")
+    assert cm.get_active_profile() == "engineer"
+
+
+def test_active_profile_preserves_unrelated_configuration(tmp_path):
+    """Selecting a profile must not discard future configuration fields."""
+    cm = ConfigManager(base_path=tmp_path / "jobcd_test")
+    cm.config_path.parent.mkdir(parents=True)
+    cm.config_path.write_text('{"theme": "dark"}', encoding="utf-8")
+
+    cm.set_active_profile("engineer")
+
+    assert read_json(cm.config_path) == {"theme": "dark", "active_profile": "engineer"}

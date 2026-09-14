@@ -52,6 +52,11 @@ def get_composer() -> EmailComposerStrategy:
     """Factory function to provide the composer strategy."""
     return AntigravityCliEmailComposer()
 
+
+def get_profiles() -> dict:
+    """Load profile data defensively so malformed local state never crashes the CLI."""
+    return read_json(config_manager.profiles_path)
+
 @app.command()
 def init():
     """
@@ -117,7 +122,10 @@ def build(
     url: str,
     title: Optional[str] = typer.Option(None, "--title", help="Manual override for job title"),
     company: Optional[str] = typer.Option(None, "--company", help="Manual override for company name"),
-    domain: Optional[str] = typer.Option(None, "--domain", help="Manual override for company domain")
+    domain: Optional[str] = typer.Option(None, "--domain", help="Manual override for company domain"),
+    profile_name: Optional[str] = typer.Option(
+        None, "--profile", "-p", help="Use a profile for this build without changing the active profile"
+    )
 ):
     """
     Execute the job pipeline for a job posting.
@@ -135,16 +143,17 @@ def build(
     payload = IntakePayload(url=url, manual_title=title, manual_company=company, manual_domain=domain)
     cache = get_cache(filename="contacts.json")
     profile_cache = get_cache(filename="profiles.json")
-    profile_data = profile_cache.get("default")
+    selected_profile_name = profile_name or config_manager.get_active_profile()
+    profile_data = profile_cache.get(selected_profile_name)
     if not profile_data:
         typer.secho("\n⚠️  No Profile Found!", fg=typer.colors.YELLOW, bold=True)
-        typer.echo("To use job-cd, you must first define your application persona.")
+        typer.echo(f"Profile '{selected_profile_name}' is not available. Define it before running a build.")
         typer.echo(f"Please create a profile at: {typer.style(config_manager.profiles_path, fg=typer.colors.CYAN)}")
         typer.echo("\nExample structure:")
         typer.secho('{\n  "default": {\n    "first_name": "Ted",\n    "last_name": "Lasso",\n    "email": "ted.lasso@afcrichmond.com",\n    ...\n  }\n}', fg=typer.colors.WHITE, dim=True)
         return
 
-    default_profile = DeploymentProfile(**profile_data)
+    selected_profile = DeploymentProfile(**profile_data)
 
     intake = get_intake()
     extractor = get_extractor()
@@ -163,7 +172,7 @@ def build(
     )
 
     try:
-        deployments = engine.run(payload=payload, profile=default_profile)
+        deployments = engine.run(payload=payload, profile=selected_profile)
 
         if not deployments or all(d.status == DeploymentStatus.FAILED for d in deployments):
             return
@@ -363,7 +372,10 @@ def config(
 @app.command()
 def profile(
     name: Optional[str] = typer.Argument(
-        None, help="Name of the specific profile to view"
+        None, help="Name of the profile to view, or the 'use'/'current' action"
+    ),
+    action_profile_name: Optional[str] = typer.Argument(
+        None, help="Profile name used by 'jobcd profile use NAME'"
     ),
     edit: bool = typer.Option(
         False, "--edit", "--open",
@@ -371,6 +383,13 @@ def profile(
     )
 ):
     """View or edit user profiles."""
+    if name == "current":
+        if action_profile_name:
+            typer.secho("Usage: jobcd profile current", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+        typer.echo(config_manager.get_active_profile())
+        return
+
     profiles_path = config_manager.profiles_path
 
     if not profiles_path.exists():
@@ -381,16 +400,35 @@ def profile(
         raise typer.Exit(code=1)
 
     if edit:
+        if name or action_profile_name:
+            typer.secho("--edit cannot be combined with a profile name or action.", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
         typer.launch(str(profiles_path))
-    else:
-        if name:
-            profiles = read_json(profiles_path)
-            if name not in profiles:
-                typer.secho(f"Profile '{name}' not found.", fg=typer.colors.RED)
-                raise typer.Exit(code=1)
-            typer.echo(json.dumps(profiles[name], indent=2))
-        else:
-            typer.echo(profiles_path.read_text(encoding="utf-8"))
+        return
+
+    profiles = get_profiles()
+    if name == "use":
+        if not action_profile_name:
+            typer.secho("Usage: jobcd profile use PROFILE_NAME", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+        if action_profile_name not in profiles:
+            typer.secho(f"Profile '{action_profile_name}' not found.", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+        config_manager.set_active_profile(action_profile_name)
+        typer.secho(f"Active profile set to '{action_profile_name}'.", fg=typer.colors.GREEN)
+        return
+
+    if action_profile_name:
+        typer.secho("Usage: jobcd profile [PROFILE_NAME] | jobcd profile use PROFILE_NAME | jobcd profile current", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    if name:
+        if name not in profiles:
+            typer.secho(f"Profile '{name}' not found.", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+        typer.echo(json.dumps(profiles[name], indent=2))
+        return
+    typer.echo(f"Active profile: {config_manager.get_active_profile()}")
+    typer.echo(json.dumps(profiles, indent=2))
 
 
 if __name__ == "__main__":

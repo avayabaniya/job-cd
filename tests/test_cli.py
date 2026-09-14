@@ -7,6 +7,25 @@ from job_cd.core.config import ConfigManager
 runner = CliRunner()
 
 
+def _profile(first_name: str) -> dict:
+    """Return the minimum complete profile payload accepted by DeploymentProfile."""
+    return {
+        "first_name": first_name,
+        "last_name": "Example",
+        "email": f"{first_name.lower()}@example.com",
+        "current_role": "Engineer",
+        "years_of_experience": 5,
+        "target_contact_titles": ["Hiring Manager"],
+        "resume_text": "Example resume"
+    }
+
+
+def _write_profiles(base_dir, profiles: dict) -> None:
+    cache_dir = base_dir / ".cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "profiles.json").write_text(json.dumps(profiles), encoding="utf-8")
+
+
 def test_init_command(tmp_path, monkeypatch):
     """Test the 'init' command bootstrapping process."""
     base_dir = tmp_path / "jobcd_test"
@@ -305,3 +324,116 @@ def test_profile_edit_alias(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     launch_mock.assert_called_once_with(str(profiles_file))
+
+
+def test_profile_use_persists_selection_and_current_reports_it(tmp_path, monkeypatch):
+    """`profile use NAME` should select a real profile without changing its data."""
+    base_dir = tmp_path / "jobcd_test"
+    _write_profiles(base_dir, {"default": _profile("Default"), "engineer": _profile("Engineer")})
+    test_cm = ConfigManager(base_path=base_dir)
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    use_result = runner.invoke(app, ["profile", "use", "engineer"])
+    current_result = runner.invoke(app, ["profile", "current"])
+
+    assert use_result.exit_code == 0
+    assert "Active profile set to 'engineer'" in use_result.stdout
+    assert current_result.exit_code == 0
+    assert current_result.stdout.strip() == "engineer"
+    assert json.loads(test_cm.profiles_path.read_text(encoding="utf-8"))["engineer"]["first_name"] == "Engineer"
+
+
+def test_profile_current_recovers_from_corrupt_active_profile_state(tmp_path, monkeypatch):
+    """A corrupt active-profile file should select the documented default safely."""
+    base_dir = tmp_path / "jobcd_test"
+    _write_profiles(base_dir, {"default": _profile("Default")})
+    test_cm = ConfigManager(base_path=base_dir)
+    test_cm.config_path.write_text("{corrupt", encoding="utf-8")
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    result = runner.invoke(app, ["profile", "current"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "default"
+
+
+def test_profile_current_defaults_without_profiles_file(tmp_path, monkeypatch):
+    """Current profile can be inspected before profiles have been initialized."""
+    test_cm = ConfigManager(base_path=tmp_path / "jobcd_test")
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    result = runner.invoke(app, ["profile", "current"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "default"
+
+
+def test_profile_list_marks_the_active_profile(tmp_path, monkeypatch):
+    """The default profile view should make the active selection visible."""
+    base_dir = tmp_path / "jobcd_test"
+    _write_profiles(base_dir, {"default": _profile("Default"), "engineer": _profile("Engineer")})
+    test_cm = ConfigManager(base_path=base_dir)
+    test_cm.set_active_profile("engineer")
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    result = runner.invoke(app, ["profile"])
+
+    assert result.exit_code == 0
+    assert "Active profile: engineer" in result.stdout
+    assert '"engineer"' in result.stdout
+
+
+def test_profile_use_rejects_unknown_profile(tmp_path, monkeypatch):
+    """Selecting an unknown profile must fail without creating active state."""
+    base_dir = tmp_path / "jobcd_test"
+    _write_profiles(base_dir, {"default": _profile("Default")})
+    test_cm = ConfigManager(base_path=base_dir)
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    result = runner.invoke(app, ["profile", "use", "missing"])
+
+    assert result.exit_code == 1
+    assert "Profile 'missing' not found" in result.stdout
+    assert not test_cm.config_path.exists()
+
+
+def test_build_uses_active_profile_but_allows_nonpersistent_override(tmp_path, monkeypatch):
+    """Build should consume the saved profile unless --profile selects a one-run override."""
+    base_dir = tmp_path / "jobcd_test"
+    profiles = {"default": _profile("Default"), "engineer": _profile("Engineer")}
+    _write_profiles(base_dir, profiles)
+    test_cm = ConfigManager(base_path=base_dir)
+    test_cm.set_active_profile("engineer")
+    monkeypatch.setattr("job_cd.main.config_manager", test_cm)
+
+    class FakeCache:
+        def get(self, key):
+            return profiles.get(key)
+
+    captured_profiles = []
+
+    class FakeEngine:
+        def __init__(self, **_kwargs):
+            pass
+
+        def run(self, payload, profile):
+            captured_profiles.append(profile.first_name)
+            return []
+
+    fake_db = MagicMock()
+    fake_db.filter.return_value = []
+    monkeypatch.setattr("job_cd.main.get_db", lambda: fake_db)
+    monkeypatch.setattr("job_cd.main.get_cache", lambda filename="contacts.json": FakeCache())
+    monkeypatch.setattr("job_cd.main.get_intake", MagicMock())
+    monkeypatch.setattr("job_cd.main.get_extractor", MagicMock())
+    monkeypatch.setattr("job_cd.main.get_contact_finder", MagicMock())
+    monkeypatch.setattr("job_cd.main.get_composer", MagicMock())
+    monkeypatch.setattr("job_cd.main.JobPipelineEngine", FakeEngine)
+
+    active_result = runner.invoke(app, ["build", "https://example.com/jobs/1"])
+    override_result = runner.invoke(app, ["build", "https://example.com/jobs/1", "--profile", "default"])
+
+    assert active_result.exit_code == 0
+    assert override_result.exit_code == 0
+    assert captured_profiles == ["Engineer", "Default"]
+    assert test_cm.get_active_profile() == "engineer"

@@ -104,6 +104,15 @@ jobcd profile default
 
 # Open profiles.json in default editor
 jobcd profile --edit
+
+# Persistently select a profile for future builds
+jobcd profile use engineer
+
+# Show the active profile (falls back to default if no selection has been saved)
+jobcd profile current
+
+# Use a different profile for one build without changing the active profile
+jobcd build https://example.com/jobs/123 --profile engineer
 ```
 
 ```json
