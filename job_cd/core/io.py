@@ -10,8 +10,9 @@ def read_json(path: Path, default: dict = None) -> dict:
     if not path.exists():
         return default or {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else default or {}
+    except (json.JSONDecodeError, OSError, UnicodeError):
         return default or {}
 
 

@@ -45,12 +45,36 @@ class ConfigManager:
         return self.cache_dir / "profiles.json"
 
     @property
+    def config_path(self) -> Path:
+        """Stores lightweight application settings separately from profile data."""
+        return self.app_dir / "config.json"
+
+    @property
     def contacts_cache_path(self) -> Path:
         return self.cache_dir / "contacts.json"
 
     def get_cache_path(self, filename: str) -> Path:
         """Returns a Path object for a specific file inside the cache directory."""
         return self.cache_dir / filename
+
+    def get_active_profile(self, default: str = "default") -> str:
+        """Return the saved active profile, falling back safely when state is absent or invalid."""
+        state = read_json(self.config_path)
+        active_profile = state.get("active_profile")
+        if isinstance(active_profile, str):
+            normalized_name = active_profile.strip()
+            if normalized_name:
+                return normalized_name
+        return default
+
+    def set_active_profile(self, profile_name: str) -> None:
+        """Persist a validated profile name while preserving unrelated settings."""
+        normalized_name = profile_name.strip()
+        if not normalized_name:
+            raise ValueError("Profile name cannot be empty.")
+        state = read_json(self.config_path)
+        state["active_profile"] = normalized_name
+        write_json(self.config_path, state)
 
 # Export as a singleton to be imported across the application
 config_manager = ConfigManager()
